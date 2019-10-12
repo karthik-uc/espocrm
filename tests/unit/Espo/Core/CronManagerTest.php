@@ -62,17 +62,28 @@ class CronManagerTest extends \PHPUnit\Framework\TestCase
             ->method('get')
             ->will($this->returnValueMap($map));
 
-        $this->object = new \Espo\Core\CronManager( $this->objects['container'] );
+        $this->object = new \Espo\Core\CronManager($this->objects['container'] );
 
         $this->reflection = new ReflectionHelper($this->object);
     }
 
     protected function tearDown() : void
     {
-        $this->object = NULL;
+        $this->object = null;
     }
 
-    function testCheckLastRunTimeFileDoesnotExist()
+    public function testConstructorWithJobsRunningInParallel()
+    {
+        $this->objects['config']
+            ->expects($this->once())
+            ->method('get')
+            ->with('jobRunInParallel')
+            ->will($this->returnValue(true));
+
+        $jobRunInParallelCronManager = new \Espo\Core\CronManager($this->objects['container']);
+    }
+
+    public function testCheckLastRunTimeFileDoesnotExist()
     {
         $this->objects['fileManager']
             ->expects($this->once())
@@ -84,7 +95,7 @@ class CronManagerTest extends \PHPUnit\Framework\TestCase
             ->method('get')
             ->will($this->returnValue(50));
 
-        $this->assertTrue( $this->reflection->invokeMethod('checkLastRunTime', array()));
+        $this->assertTrue($this->reflection->invokeMethod('checkLastRunTime', array()));
     }
 
     public function testCheckLastRunTime()
@@ -101,7 +112,7 @@ class CronManagerTest extends \PHPUnit\Framework\TestCase
             ->method('get')
             ->will($this->returnValue(50));
 
-        $this->assertTrue( $this->reflection->invokeMethod('checkLastRunTime', array()));
+        $this->assertTrue($this->reflection->invokeMethod('checkLastRunTime', array()));
     }
 
     public function testCheckLastRunTimeTooFrequency()
@@ -119,5 +130,76 @@ class CronManagerTest extends \PHPUnit\Framework\TestCase
             ->will($this->returnValue(50));
 
         $this->assertFalse($this->reflection->invokeMethod('checkLastRunTime', array()));
+    }
+
+    public function testGetContainer()
+    {
+        $this->assertInstanceOf(\Espo\Core\Container::class, $this->reflection->invokeMethod("getContainer"));
+    }
+
+    public function testGetEntityManager()
+    {
+        $this->assertInstanceOf(\Espo\Orm\EntityManager::class, $this->reflection->invokeMethod("getEntityManager"));
+    }
+
+    public function testGetServiceFactory()
+    {
+        $this->assertInstanceOf(\Espo\Core\ServiceFactory::class, $this->reflection->invokeMethod("getServiceFactory"));
+    }
+
+    public function testGetScheduledJobUtil()
+    {
+        $this->assertInstanceOf(\Espo\Core\Utils\ScheduledJob::class, $this->reflection->invokeMethod("getScheduledJobUtil"));
+    }
+
+    public function testGetCronJobUtil()
+    {
+        $this->assertInstanceOf(\Espo\Core\Utils\Cron\Job::class, $this->reflection->invokeMethod("getCronJobUtil"));
+    }
+
+    public function testGetCronScheduledJobUtil()
+    {
+        $this->assertInstanceOf(\Espo\Core\Utils\Cron\ScheduledJob::class, $this->reflection->invokeMethod("getCronScheduledJobUtil"));
+    }
+
+    public function testSetLastRunTime()
+    {
+        $time = time();
+        $this->objects['fileManager']->expects($this->once())->method("putPhpContents")->willReturn(4);
+        $this->assertEquals(4, $this->reflection->invokeMethod('setLastRunTime', [$time]));
+    }
+
+    public function testUseProcessPool()
+    {
+        $this->assertFalse($this->reflection->invokeMethod("useProcessPool"));
+        
+        $this->object->setUseProcessPool(true);
+        $this->assertTrue($this->reflection->invokeMethod("useProcessPool"));
+    }
+
+    public function testRunJobByIdWhenIdIsNotGiven()
+    {
+        $this->expectException(\Espo\Core\Exceptions\Error::class);
+        $this->object->runJobById("");
+    }
+
+    public function testRunJobByIdWhenEntityIsNotFound()
+    {
+        $this->expectException(\Espo\Core\Exceptions\Error::class);
+        $this->expectExceptionMessage("Job 1 not found.");
+        $this->objects['entityManager']->expects($this->once())->method('getEntity')->with('Job', 1)->willReturn(null);
+
+        $this->object->runJobById(1);
+    }
+
+    public function testRunJobByIdWhenJobEntityIsNotReady()
+    {
+        $this->expectException(\Espo\Core\Exceptions\Error::class);
+        $this->expectExceptionMessage("Can't run job 1 with no status Ready.");
+
+        $job = new \Espo\Entities\Job;
+        $this->objects['entityManager']->expects($this->once())->method('getEntity')->with('Job', 1)->willReturn($job);
+
+        $this->object->runJobById(1);
     }
 }
